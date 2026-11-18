@@ -1,4 +1,7 @@
-"""Shared constants: column names, default paths, SPC constants."""
+"""Shared constants: column names, default paths, SPC constants.
+
+Process-specific settings (steps, tools, targets) live in process_flow.toml.
+"""
 
 from pathlib import Path
 
@@ -6,30 +9,22 @@ from pathlib import Path
 COL_DATE = "date"
 COL_LOT = "lot_id"
 COL_WAFER = "wafer_id"
+COL_WAFER_UID = "wafer_uid"     # "<lot_id>-W<wafer>": links one wafer across all steps
+COL_STEP = "step"
 COL_EQUIP = "equipment_id"
 COL_SITE = "site"
-COL_THICK = "thickness_nm"
+COL_PARAM = "parameter"
+COL_UNIT = "unit"
+COL_VALUE = "value"
 
-REQUIRED_COLUMNS = [COL_DATE, COL_LOT, COL_WAFER, COL_EQUIP, COL_SITE, COL_THICK]
+REQUIRED_COLUMNS = [COL_DATE, COL_LOT, COL_WAFER, COL_WAFER_UID, COL_STEP, COL_EQUIP,
+                    COL_SITE, COL_PARAM, COL_UNIT, COL_VALUE]
 
 # ---- Default paths ----
 DEFAULT_DATA_DIR = Path("data")
 DEFAULT_REPORT_PATH = Path("output") / "spc_report.xlsx"
 
-# ---- Process settings for synthetic data ----
-DEFAULT_PHASE1_DAYS = 5      # first N days set the control limits (Phase I)
-
-TARGET_THICKNESS_NM = 1000.0
-SITES_PER_WAFER = 5          # subgroup size n
-WAFERS_PER_LOT = 25
-
-# Each tool has its own slightly different mean offset and spread (nm).
-EQUIPMENT_PROFILES = {
-    "CVD-01": {"offset": 0.0, "sigma": 4.0},
-    "CVD-02": {"offset": 3.0, "sigma": 5.0},
-    "CVD-03": {"offset": -2.0, "sigma": 3.5},
-    "CVD-04": {"offset": 1.0, "sigma": 6.0},
-}
+DEFAULT_PHASE1_DAYS = 5      # first N days of each step set the control limits (Phase I)
 
 # ---- X-bar / R chart constants for subgroup size n ----
 # Source: standard SPC tables (e.g. Montgomery, Appendix VI).

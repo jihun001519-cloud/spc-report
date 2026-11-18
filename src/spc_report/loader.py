@@ -1,4 +1,4 @@
-"""Load every Excel file in a folder and merge into one validated DataFrame."""
+"""Load every Excel file under a folder (recursively) and merge into one DataFrame."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from . import config as C
 
 
 def load_folder(folder: Path) -> pd.DataFrame:
-    files = sorted(p for p in Path(folder).glob("*.xlsx") if not p.name.startswith("~$"))
+    files = sorted(p for p in Path(folder).rglob("*.xlsx") if not p.name.startswith("~$"))
     if not files:
         raise FileNotFoundError(f"No .xlsx files found in {folder}")
 
@@ -22,25 +22,24 @@ def load_folder(folder: Path) -> pd.DataFrame:
         if missing:
             warnings.warn(f"{path.name}: missing columns {sorted(missing)} - skipped")
             continue
-        df["source_file"] = path.name
+        df["source_file"] = path.relative_to(folder).as_posix()
         frames.append(df)
 
     if not frames:
         raise ValueError("No valid files to load")
-
-    data = pd.concat(frames, ignore_index=True)
-    return clean(data)
+    return clean(pd.concat(frames, ignore_index=True))
 
 
 def clean(data: pd.DataFrame) -> pd.DataFrame:
     """Coerce types and drop rows that cannot be used."""
     data = data.copy()
     data[C.COL_DATE] = pd.to_datetime(data[C.COL_DATE], errors="coerce")
-    data[C.COL_THICK] = pd.to_numeric(data[C.COL_THICK], errors="coerce")
+    data[C.COL_VALUE] = pd.to_numeric(data[C.COL_VALUE], errors="coerce")
+    for col in (C.COL_STEP, C.COL_EQUIP, C.COL_LOT, C.COL_WAFER_UID, C.COL_PARAM, C.COL_UNIT):
+        data[col] = data[col].astype(str)
     bad = data[C.REQUIRED_COLUMNS].isna().any(axis=1)
     if bad.any():
         warnings.warn(f"Dropped {int(bad.sum())} rows with missing/non-numeric values")
     data = data[~bad]
-    return data.sort_values([C.COL_EQUIP, C.COL_DATE, C.COL_LOT, C.COL_WAFER, C.COL_SITE]).reset_index(
-        drop=True
-    )
+    keys = [C.COL_STEP, C.COL_EQUIP, C.COL_DATE, C.COL_LOT, C.COL_WAFER, C.COL_SITE]
+    return data.sort_values(keys).reset_index(drop=True)

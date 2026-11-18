@@ -1,0 +1,115 @@
+# Process flow definition (simplified STI module).
+#
+# All numbers are EDUCATIONAL ASSUMPTIONS with plausible magnitudes,
+# not data from any real fab. Adding a step = adding a [[steps]] block.
+#
+# Per step:
+#   target       nominal value of the measured parameter
+#   spec         +/- spec half-width (USL = target + spec, LSL = target - spec), for Cp/Cpk later
+#   sites        measurement sites per wafer = subgroup size n (2..6 supported)
+#   sigma_lot    lot-to-lot variation (shared by all wafers in a lot)
+#   sigma_wafer  wafer-to-wafer variation inside a lot
+#   equipment    per-tool mean offset and within-wafer (site) sigma
+#
+# NOTE: X-bar limits use within-wafer range only, so sigma_lot / sigma_wafer are
+# kept small relative to the site sigma; large values produce many false alarms.
+
+[generation]
+lots_per_day = 4
+wafers_per_lot = 8
+start_date = "2026-11-01"
+# step k of a lot is processed k days after the lot starts (OX day 0 ... CMP day 4)
+
+[[steps]]
+id = "OX"
+name = "Oxidation"
+parameter = "Tox"
+unit = "nm"
+target = 10.0
+spec = 0.5
+sites = 5
+sigma_lot = 0.02
+sigma_wafer = 0.01
+equipment = { "FURN-01" = { offset = 0.0, sigma = 0.10 }, "FURN-02" = { offset = 0.03, sigma = 0.12 } }
+
+[[steps]]
+id = "PH"
+name = "Photo"
+parameter = "ADI_CD"
+unit = "nm"
+target = 130.0
+spec = 6.5
+sites = 5
+sigma_lot = 0.4
+sigma_wafer = 0.2
+equipment = { "PHOTO-01" = { offset = 0.0, sigma = 1.5 }, "PHOTO-02" = { offset = 0.5, sigma = 1.6 } }
+
+[[steps]]
+id = "ET"
+name = "Etch"
+parameter = "etch_depth"
+unit = "nm"
+target = 300.0
+spec = 15.0
+sites = 5
+sigma_lot = 1.0
+sigma_wafer = 0.5
+equipment = { "ETCH-01" = { offset = 0.0, sigma = 4.0 }, "ETCH-02" = { offset = 2.0, sigma = 4.5 }, "ETCH-03" = { offset = -1.5, sigma = 3.8 } }
+
+[[steps]]
+id = "DEP"
+name = "Deposition"
+parameter = "film_thickness"
+unit = "nm"
+target = 1000.0
+spec = 30.0
+sites = 5
+sigma_lot = 1.2
+sigma_wafer = 0.5
+equipment = { "CVD-01" = { offset = 0.0, sigma = 4.0 }, "CVD-02" = { offset = 3.0, sigma = 5.0 }, "CVD-03" = { offset = -2.0, sigma = 3.5 }, "CVD-04" = { offset = 1.0, sigma = 6.0 } }
+
+[[steps]]
+id = "CMP"
+name = "CMP"
+parameter = "post_CMP_thickness"
+unit = "nm"
+target = 500.0
+spec = 40.0
+sites = 5
+sigma_lot = 1.5
+sigma_wafer = 1.0
+equipment = { "CMP-01" = { offset = 0.0, sigma = 8.0 }, "CMP-02" = { offset = -3.0, sigma = 9.0 } }
+
+# ---- Inter-step propagation: GROUND TRUTH injected by the generator ----
+# dst wafer mean += coef * (src wafer TRUE mean - src target)
+# Regressing on MEASURED wafer means gives a smaller slope (site noise attenuates it).
+
+[[propagation]]
+from = "DEP"
+to = "CMP"
+coef = 0.7
+note = "Thicker deposition leaves more oxide after a fixed-time polish (partially compensated)"
+
+[[propagation]]
+from = "PH"
+to = "ET"
+coef = 0.4
+note = "Wider CD etches deeper (aspect-ratio dependent etch, ARDE)"
+
+# OX has no downstream effect on purpose: a negative control for the analysis.
+
+# ---- Injected anomalies ----
+# day = calendar days from start_date of the step's processing date
+
+[[anomalies]]
+type = "shift"
+step = "DEP"
+equipment = "CVD-02"
+from_day = 10
+amount = 12.0
+
+[[anomalies]]
+type = "spike"          # whole wafer jumps by +/- size * tool sigma
+step = "*"              # "*" = every step
+prob = 0.02
+size = 6.0

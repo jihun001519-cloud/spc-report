@@ -2,7 +2,15 @@ import pandas as pd
 import pytest
 
 from spc_report import config as C
-from spc_report.stats import compute_limits, control_charts, equipment_summary, make_subgroups
+from spc_report.stats import (compute_limits, control_charts, equipment_summary, make_subgroups,
+                              wafer_trace)
+
+
+def _rows(step, date, wafer, base, equip="T1", lot="L1"):
+    return [{C.COL_DATE: pd.Timestamp(date), C.COL_LOT: lot, C.COL_WAFER: wafer,
+             C.COL_WAFER_UID: f"{lot}-W{wafer:02d}", C.COL_STEP: step, C.COL_EQUIP: equip,
+             C.COL_SITE: i + 1, C.COL_PARAM: "thk", C.COL_UNIT: "nm", C.COL_VALUE: float(base + i)}
+            for i in range(5)]
 
 
 def _toy_data():
@@ -12,12 +20,7 @@ def _toy_data():
     wafer 2: 20,21,22,23,24 -> xbar=22, R=4
     X-double-bar = 17, R-bar = 4
     """
-    rows = []
-    for wafer, base in ((1, 10), (2, 20)):
-        for site in range(5):
-            rows.append({C.COL_DATE: pd.Timestamp("2026-11-01"), C.COL_LOT: "L1", C.COL_WAFER: wafer,
-                         C.COL_EQUIP: "T1", C.COL_SITE: site + 1, C.COL_THICK: float(base + site)})
-    return pd.DataFrame(rows)
+    return pd.DataFrame(_rows("S1", "2026-11-01", 1, 10) + _rows("S1", "2026-11-01", 2, 20))
 
 
 def test_subgroups():
@@ -53,19 +56,14 @@ def test_summary_stats():
 
 def _two_day_data():
     """Day 1 (Phase I): wafers 10..14 and 20..24.  Day 2 (Phase II): 100..104."""
-    df = _toy_data()
-    day2 = df[df[C.COL_WAFER] == 1].copy()
-    day2[C.COL_DATE] = pd.Timestamp("2026-11-02")
-    day2[C.COL_WAFER] = 3
-    day2[C.COL_THICK] = day2[C.COL_THICK] + 90  # 100..104
-    return pd.concat([df, day2], ignore_index=True)
+    return pd.concat([_toy_data(), pd.DataFrame(_rows("S1", "2026-11-02", 3, 100))],
+                     ignore_index=True)
 
 
 def test_phase1_limits_ignore_phase2_data():
     (res,) = control_charts(_two_day_data(), phase1_days=1)
     s = res.subgroups
     assert s["phase"].tolist() == ["I", "I", "II"]
-    # limits identical to the day-1-only hand calculation
     assert res.limits.xbar_cl == pytest.approx(17.0)
     assert res.limits.xbar_ucl == pytest.approx(17 + 0.577 * 4)
     assert s.loc[s["phase"] == "II", "xbar_ooc"].all()
@@ -75,3 +73,28 @@ def test_phase1_days_zero_uses_all_data():
     (res,) = control_charts(_two_day_data(), phase1_days=0)
     assert (res.subgroups["phase"] == "I").all()
     assert res.limits.xbar_cl == pytest.approx((12 + 22 + 102) / 3)
+
+
+def test_phase1_window_is_per_step():
+    """S2 starts 3 days later than S1; its Phase I must start at its own first date."""
+    df = pd.DataFrame(_rows("S1", "2026-11-01", 1, 10) + _rows("S1", "2026-11-02", 2, 10)
+                      + _rows("S2", "2026-11-04", 1, 50) + _rows("S2", "2026-11-05", 2, 50))
+    res = {r.step: r for r in control_charts(df, phase1_days=1, step_order=["S1", "S2"])}
+    assert res["S2"].subgroups["phase"].tolist() == ["I", "II"]
+
+
+def test_charts_split_by_step_and_tool_in_flow_order():
+    df = pd.DataFrame(_rows("B", "2026-11-01", 1, 10, equip="X") + _rows("A", "2026-11-01", 1, 10)
+                      + _rows("A", "2026-11-01", 2, 10, equip="T2"))
+    res = control_charts(df, phase1_days=0, step_order=["B", "A"])
+    assert [(r.step, r.equipment) for r in res] == [("B", "X"), ("A", "T1"), ("A", "T2")]
+
+
+def test_wafer_trace_links_steps():
+    df = pd.DataFrame(_rows("S1", "2026-11-01", 1, 10) + _rows("S2", "2026-11-02", 1, 50, equip="E9"))
+    t = wafer_trace(df, ["S1", "S2"])
+    assert len(t) == 1
+    row = t.iloc[0]
+    assert row[C.COL_WAFER_UID] == "L1-W01"
+    assert row["S1_thk"] == pytest.approx(12.0) and row["S2_thk"] == pytest.approx(52.0)
+    assert row["S2_equipment"] == "E9"

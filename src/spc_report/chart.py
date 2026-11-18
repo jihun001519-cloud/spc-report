@@ -17,7 +17,12 @@ LIMIT = "#c05621"
 CENTER = "#2f855a"
 
 
-def _panel(ax, x, y, ooc, cl, ucl, lcl, ylabel, fmt):
+def fmt_value(v: float) -> str:
+    """3 decimals for small values (e.g. Tox ~10 nm), 2 otherwise."""
+    return f"{v:.3f}" if abs(v) < 100 else f"{v:.2f}"
+
+
+def _panel(ax, x, y, ooc, cl, ucl, lcl, ylabel):
     ax.plot(x, y, color=NORMAL, marker="o", markersize=3.5, linewidth=1, zorder=2)
     ax.scatter(x[ooc], y[ooc], color=OOC, s=45, zorder=3, edgecolor="white", linewidth=0.8,
                label="Out of control")
@@ -26,7 +31,7 @@ def _panel(ax, x, y, ooc, cl, ucl, lcl, ylabel, fmt):
     ax.axhline(lcl, color=LIMIT, linestyle="--", linewidth=1.2)
     right = x.max() + 0.5
     for val, name, color in ((ucl, "UCL", LIMIT), (cl, "CL", CENTER), (lcl, "LCL", LIMIT)):
-        ax.text(right, val, f" {name}={val:{fmt}}", va="center", fontsize=8, color=color)
+        ax.text(right, val, f" {name}={fmt_value(val)}", va="center", fontsize=8, color=color)
     ax.set_ylabel(ylabel)
     ax.grid(alpha=0.25)
     ax.spines[["top", "right"]].set_visible(False)
@@ -34,16 +39,16 @@ def _panel(ax, x, y, ooc, cl, ucl, lcl, ylabel, fmt):
         ax.legend(loc="upper left", fontsize=8, frameon=False)
 
 
-def draw_xbar_r(result: ChartResult, out_path: Path) -> Path:
+def draw_xbar_r(result: ChartResult, out_path: Path, dpi: int = 110) -> Path:
     s, lim = result.subgroups, result.limits
     x = s["subgroup"].to_numpy()
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 6.5), sharex=True,
                                    gridspec_kw={"height_ratios": [3, 2]})
     _panel(ax1, x, s["xbar"].to_numpy(), s["xbar_ooc"].to_numpy(),
-           lim.xbar_cl, lim.xbar_ucl, lim.xbar_lcl, "X-bar (nm)", ".2f")
+           lim.xbar_cl, lim.xbar_ucl, lim.xbar_lcl, f"X-bar ({result.unit})")
     _panel(ax2, x, s["range"].to_numpy(), s["r_ooc"].to_numpy(),
-           lim.r_cl, lim.r_ucl, lim.r_lcl, "Range (nm)", ".2f")
+           lim.r_cl, lim.r_ucl, lim.r_lcl, f"Range ({result.unit})")
 
     # Phase I / Phase II boundary (only when both phases exist)
     if "phase" in s and (s["phase"] == "II").any() and (s["phase"] == "I").any():
@@ -57,13 +62,14 @@ def draw_xbar_r(result: ChartResult, out_path: Path) -> Path:
                  color="#555555")
 
     n_x, n_r = int(s["xbar_ooc"].sum()), int(s["r_ooc"].sum())
-    ax1.set_title(f"{result.equipment}  X-bar chart  (n={lim.n}, OOC={n_x})", loc="left", fontsize=11)
-    ax2.set_title(f"{result.equipment}  R chart  (OOC={n_r})", loc="left", fontsize=11)
+    label = f"{result.step} {result.parameter} | {result.equipment}"
+    ax1.set_title(f"{label}  X-bar chart  (n={lim.n}, OOC={n_x})", loc="left", fontsize=11)
+    ax2.set_title(f"{label}  R chart  (OOC={n_r})", loc="left", fontsize=11)
     ax2.set_xlabel("Subgroup (wafer, time order)")
 
     fig.tight_layout()
     fig.subplots_adjust(right=0.88)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=110)
+    fig.savefig(out_path, dpi=dpi)
     plt.close(fig)
     return out_path
