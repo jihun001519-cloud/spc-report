@@ -1,0 +1,25 @@
+[project]
+name = "spc-report"
+version = "0.1.0"
+description = "Semiconductor process measurement SPC report generator"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.5",
+    "openpyxl>=3.1.5",
+    "pandas>=3.1.1",
+]
+
+[project.scripts]
+spc-report = "spc_report.cli:report_main"
+spc-generate = "spc_report.cli:generate_main"
+
+[build-system]
+requires = ["uv_build>=0.13.9,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
