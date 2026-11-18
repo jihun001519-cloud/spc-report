@@ -45,6 +45,17 @@ def draw_xbar_r(result: ChartResult, out_path: Path) -> Path:
     _panel(ax2, x, s["range"].to_numpy(), s["r_ooc"].to_numpy(),
            lim.r_cl, lim.r_ucl, lim.r_lcl, "Range (nm)", ".2f")
 
+    # Phase I / Phase II boundary (only when both phases exist)
+    if "phase" in s and (s["phase"] == "II").any() and (s["phase"] == "I").any():
+        boundary = s.loc[s["phase"] == "II", "subgroup"].min() - 0.5
+        for ax in (ax1, ax2):
+            ax.axvline(boundary, color="#555555", linestyle=":", linewidth=1.3)
+        top = ax1.get_ylim()[1]
+        ax1.text(boundary - 0.8, top, "Phase I (limits set)", ha="right", va="top", fontsize=8,
+                 color="#555555")
+        ax1.text(boundary + 0.8, top, "Phase II (monitoring)", ha="left", va="top", fontsize=8,
+                 color="#555555")
+
     n_x, n_r = int(s["xbar_ooc"].sum()), int(s["r_ooc"].sum())
     ax1.set_title(f"{result.equipment}  X-bar chart  (n={lim.n}, OOC={n_x})", loc="left", fontsize=11)
     ax2.set_title(f"{result.equipment}  R chart  (OOC={n_r})", loc="left", fontsize=11)

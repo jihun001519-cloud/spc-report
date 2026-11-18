@@ -82,14 +82,34 @@ def flag_ooc(sub: pd.DataFrame, lim: ControlLimits) -> pd.DataFrame:
     return sub
 
 
-def control_charts(data: pd.DataFrame) -> list[ChartResult]:
-    """One X-bar/R chart per equipment (tools have different means)."""
+def phase1_cutoff(data: pd.DataFrame, phase1_days: int | None) -> pd.Timestamp | None:
+    """First date of Phase II, or None when every row is Phase I."""
+    if not phase1_days or phase1_days <= 0:
+        return None
+    start = pd.Timestamp(data[C.COL_DATE].min()).normalize()
+    cutoff = start + pd.Timedelta(days=phase1_days)
+    return cutoff if data[C.COL_DATE].max() >= cutoff else None
+
+
+def control_charts(data: pd.DataFrame, phase1_days: int | None = C.DEFAULT_PHASE1_DAYS
+                   ) -> list[ChartResult]:
+    """One X-bar/R chart per equipment (tools have different means).
+
+    Phase I  = the first `phase1_days` days: used to set the control limits.
+    Phase II = everything after: monitored against the Phase I limits.
+    phase1_days=None/0 uses all data as Phase I.
+    """
     results = []
     all_sub = make_subgroups(data)
+    cutoff = phase1_cutoff(data, phase1_days)
     for equip, sub in all_sub.groupby(C.COL_EQUIP, sort=True):
         sub = sub.reset_index(drop=True)
-        lim = compute_limits(sub)
+        is_p1 = sub[C.COL_DATE] < cutoff if cutoff is not None else pd.Series(True, index=sub.index)
+        if not is_p1.any():
+            raise ValueError(f"{equip}: no Phase I data in the first {phase1_days} days")
+        lim = compute_limits(sub[is_p1])
         sub = flag_ooc(sub, lim)
+        sub.insert(0, "phase", is_p1.map({True: "I", False: "II"}))
         sub.insert(0, "subgroup", range(1, len(sub) + 1))
         results.append(ChartResult(equipment=str(equip), limits=lim, subgroups=sub))
     return results
@@ -110,7 +130,7 @@ def ooc_table(results: list[ChartResult]) -> pd.DataFrame:
             axis=1,
         )
         frames.append(hit)
-    cols = ["subgroup", C.COL_EQUIP, C.COL_DATE, C.COL_LOT, C.COL_WAFER, "xbar", "range", "reason"]
+    cols = ["subgroup", "phase", C.COL_EQUIP, C.COL_DATE, C.COL_LOT, C.COL_WAFER, "xbar", "range", "reason"]
     if not frames:
         return pd.DataFrame(columns=cols)
     return pd.concat(frames, ignore_index=True)[cols]

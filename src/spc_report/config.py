@@ -17,6 +17,8 @@ DEFAULT_DATA_DIR = Path("data")
 DEFAULT_REPORT_PATH = Path("output") / "spc_report.xlsx"
 
 # ---- Process settings for synthetic data ----
+DEFAULT_PHASE1_DAYS = 5      # first N days set the control limits (Phase I)
+
 TARGET_THICKNESS_NM = 1000.0
 SITES_PER_WAFER = 5          # subgroup size n
 WAFERS_PER_LOT = 25

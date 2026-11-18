@@ -28,9 +28,11 @@ def report_main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description="Build an SPC Excel report from a folder of Excel files")
     p.add_argument("--in", dest="inp", type=Path, default=C.DEFAULT_DATA_DIR, help="input folder")
     p.add_argument("--out", type=Path, default=C.DEFAULT_REPORT_PATH, help="report .xlsx path")
+    p.add_argument("--phase1-days", type=int, default=C.DEFAULT_PHASE1_DAYS,
+                   help="first N days set the control limits (0 = use all data)")
     a = p.parse_args(argv)
 
-    info = build_report(a.inp, a.out)
+    info = build_report(a.inp, a.out, phase1_days=a.phase1_days)
     print(f"Merged {info['files']} files / {info['rows']} rows, {info['equipment']} tools")
     print(f"Out-of-control subgroups: {info['ooc']}")
     print(f"Report saved: {info['path']}")

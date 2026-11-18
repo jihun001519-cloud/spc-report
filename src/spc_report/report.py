@@ -22,7 +22,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from . import config as C
 from .chart import draw_xbar_r
 from .loader import load_folder
-from .stats import ChartResult, control_charts, equipment_summary, ooc_table
+from .stats import ChartResult, control_charts, equipment_summary, ooc_table, phase1_cutoff
 
 HEADER_FILL = PatternFill("solid", fgColor="1F3A5F")
 HEADER_FONT = Font(bold=True, color="FFFFFF")
@@ -61,11 +61,13 @@ def _autofit(ws: Worksheet, min_width: int = 8, max_width: int = 28) -> None:
 
 
 def _summary_sheet(ws: Worksheet, summary: pd.DataFrame, results: list[ChartResult],
-                   n_files: int) -> None:
+                   n_files: int, phase_note: str) -> None:
     ws["A1"] = "SPC Report - Film Thickness"
     ws["A1"].font = Font(bold=True, size=14)
     ws["A2"] = f"Source files: {n_files}   |   Subgroup: 1 wafer (n={C.SITES_PER_WAFER} sites)"
     ws["A2"].font = Font(italic=True, color="666666")
+    ws["A3"] = phase_note
+    ws["A3"].font = Font(italic=True, color="666666")
 
     ws["A4"] = "1. Equipment summary (all measurements)"
     ws["A4"].font = Font(bold=True)
@@ -77,7 +79,8 @@ def _summary_sheet(ws: Worksheet, summary: pd.DataFrame, results: list[ChartResu
         [
             {
                 "Equipment": r.equipment,
-                "Subgroups": len(r.subgroups),
+                "Phase I SG": int((r.subgroups["phase"] == "I").sum()),
+                "Phase II SG": int((r.subgroups["phase"] == "II").sum()),
                 "X-dbar (CL)": r.limits.xbar_cl,
                 "X UCL": r.limits.xbar_ucl,
                 "X LCL": r.limits.xbar_lcl,
@@ -93,7 +96,7 @@ def _summary_sheet(ws: Worksheet, summary: pd.DataFrame, results: list[ChartResu
     _write_table(ws, limits, start_row=row + 1)
     # highlight non-zero OOC counts
     for i in range(len(limits)):
-        for j in (9, 10):
+        for j in (10, 11):
             c = ws.cell(row=row + 2 + i, column=j)
             if c.value:
                 c.fill, c.font = OOC_FILL, OOC_FONT
@@ -111,9 +114,9 @@ def _chart_sheet(ws: Worksheet, result: ChartResult, img_path: Path) -> None:
 
     table_row = 40  # below the image (~715 px tall)
     s = result.subgroups.rename(columns={C.COL_EQUIP: "equipment"})
-    s = s[["subgroup", C.COL_DATE, C.COL_LOT, C.COL_WAFER, "n", "xbar", "range", "xbar_ooc", "r_ooc"]]
+    s = s[["subgroup", "phase", C.COL_DATE, C.COL_LOT, C.COL_WAFER, "n", "xbar", "range", "xbar_ooc", "r_ooc"]]
     _write_table(ws, s, start_row=table_row)
-    xbar_col, r_col = 6, 7
+    xbar_col, r_col = 7, 8
     for i, rec in enumerate(s.itertuples(index=False), start=1):
         r = table_row + i
         if rec.xbar_ooc or rec.r_ooc:
@@ -128,14 +131,22 @@ def _chart_sheet(ws: Worksheet, result: ChartResult, img_path: Path) -> None:
     ws.column_dimensions["A"].width = 10
 
 
-def build_report(data_dir: Path, out_path: Path) -> dict:
+def build_report(data_dir: Path, out_path: Path,
+                 phase1_days: int | None = C.DEFAULT_PHASE1_DAYS) -> dict:
     data = load_folder(data_dir)
     summary = equipment_summary(data)
-    results = control_charts(data)
+    results = control_charts(data, phase1_days)
+    cutoff = phase1_cutoff(data, phase1_days)
+    if cutoff is None:
+        phase_note = "Control limits: all data (Phase I only)"
+    else:
+        phase_note = (f"Control limits from Phase I = dates before {cutoff:%Y-%m-%d} "
+                      f"(first {phase1_days} days); later data monitored as Phase II")
     ooc = ooc_table(results)
 
     wb = Workbook()
-    _summary_sheet(wb.active, summary, results, n_files=data["source_file"].nunique())
+    _summary_sheet(wb.active, summary, results, n_files=data["source_file"].nunique(),
+                   phase_note=phase_note)
     wb.active.title = "Summary"
 
     with tempfile.TemporaryDirectory() as tmp:

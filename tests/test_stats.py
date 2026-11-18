@@ -49,3 +49,29 @@ def test_summary_stats():
     assert s.loc["T1", "N"] == 10
     assert s.loc["T1", "Mean"] == pytest.approx(17.0)
     assert s.loc["T1", "Min"] == 10 and s.loc["T1", "Max"] == 24
+
+
+def _two_day_data():
+    """Day 1 (Phase I): wafers 10..14 and 20..24.  Day 2 (Phase II): 100..104."""
+    df = _toy_data()
+    day2 = df[df[C.COL_WAFER] == 1].copy()
+    day2[C.COL_DATE] = pd.Timestamp("2026-11-02")
+    day2[C.COL_WAFER] = 3
+    day2[C.COL_THICK] = day2[C.COL_THICK] + 90  # 100..104
+    return pd.concat([df, day2], ignore_index=True)
+
+
+def test_phase1_limits_ignore_phase2_data():
+    (res,) = control_charts(_two_day_data(), phase1_days=1)
+    s = res.subgroups
+    assert s["phase"].tolist() == ["I", "I", "II"]
+    # limits identical to the day-1-only hand calculation
+    assert res.limits.xbar_cl == pytest.approx(17.0)
+    assert res.limits.xbar_ucl == pytest.approx(17 + 0.577 * 4)
+    assert s.loc[s["phase"] == "II", "xbar_ooc"].all()
+
+
+def test_phase1_days_zero_uses_all_data():
+    (res,) = control_charts(_two_day_data(), phase1_days=0)
+    assert (res.subgroups["phase"] == "I").all()
+    assert res.limits.xbar_cl == pytest.approx((12 + 22 + 102) / 3)
